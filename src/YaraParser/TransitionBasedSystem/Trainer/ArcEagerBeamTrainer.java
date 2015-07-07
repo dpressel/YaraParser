@@ -69,56 +69,70 @@ public class ArcEagerBeamTrainer {
 
 
         for (int i = 1; i <= maxIteration; i++) {
-            long start = System.currentTimeMillis();
-
-            int dataCount = 0;
-
-            for (GoldConfiguration goldConfiguration : trainData) {
-                dataCount++;
-                if (dataCount % 1000 == 0)
-                    System.out.print(dataCount + "...");
-                trainOnOneSample(goldConfiguration, partialTreeIter, i, dataCount, pool);
-
-                classifier.incrementIteration();
-            }
-            System.out.print("\n");
-            long end = System.currentTimeMillis();
-            long timeSec = (end - start) / 1000;
-            System.out.println("iteration "+i+" took " + timeSec + " seconds\n");
-
+            trainEpoch(trainData, partialTreeIter, pool, i);
             System.out.print("saving the model...");
             InfStruct infStruct = new InfStruct(classifier, maps, dependencyRelations, options);
-            infStruct.saveModel(modelPath + "_iter" + i);
 
-            System.out.println("done\n");
-
-            if (!devPath.equals("")) {
-                AveragedPerceptron averagedPerceptron = new AveragedPerceptron(infStruct);
-
-                int raSize = averagedPerceptron.raSize();
-                int effectiveRaSize = averagedPerceptron.effectiveRaSize();
-                float raRatio = 100.0f * effectiveRaSize / raSize;
-
-                int laSize = averagedPerceptron.laSize();
-                int effectiveLaSize = averagedPerceptron.effectiveLaSize();
-                float laRatio = 100.0f * effectiveLaSize / laSize;
-
-                DecimalFormat format = new DecimalFormat("##.00");
-                System.out.println("size of RA features in memory:" + effectiveRaSize + "/" + raSize + "->" + format.format(raRatio) + "%");
-                System.out.println("size of LA features in memory:" + effectiveLaSize + "/" + laSize + "->" + format.format(laRatio) + "%");
-                KBeamArcEagerParser parser = new KBeamArcEagerParser(averagedPerceptron, dependencyRelations, featureLength, maps, options.numOfThreads);
-
-                parser.parseConllFile(devPath, modelPath + ".__tmp__",
-                        options.rootFirst, options.beamWidth, true, lowerCased, options.numOfThreads, false, "");
-                Evaluator.evaluate(devPath, modelPath + ".__tmp__", punctuations);
-                parser.shutDownLiveThreads();
+            // Dont make the last iteration write out _iter, and force a gz extension!
+            String suffix = (i == maxIteration) ? (""): ("_iter" + i);
+            if (!suffix.endsWith(".gz"))
+            {
+                suffix += ".gz";
             }
+            infStruct.saveModel(modelPath + suffix);
+            System.out.println("done\n");
+            evaluateDevSet(devPath, modelPath, lowerCased, punctuations, infStruct);
         }
         boolean isTerminated = executor.isTerminated();
         while (!isTerminated) {
             executor.shutdownNow();
             isTerminated = executor.isTerminated();
         }
+    }
+
+    private void evaluateDevSet(String devPath, String modelPath, boolean lowerCased, HashSet<String> punctuations, InfStruct infStruct) throws Exception
+    {
+        if (!devPath.equals("")) {
+            AveragedPerceptron averagedPerceptron = new AveragedPerceptron(infStruct);
+
+            int raSize = averagedPerceptron.raSize();
+            int effectiveRaSize = averagedPerceptron.effectiveRaSize();
+            float raRatio = 100.0f * effectiveRaSize / raSize;
+
+            int laSize = averagedPerceptron.laSize();
+            int effectiveLaSize = averagedPerceptron.effectiveLaSize();
+            float laRatio = 100.0f * effectiveLaSize / laSize;
+
+            DecimalFormat format = new DecimalFormat("##.00");
+            System.out.println("size of RA features in memory:" + effectiveRaSize + "/" + raSize + "->" + format.format(raRatio) + "%");
+            System.out.println("size of LA features in memory:" + effectiveLaSize + "/" + laSize + "->" + format.format(laRatio) + "%");
+            KBeamArcEagerParser parser = new KBeamArcEagerParser(averagedPerceptron, dependencyRelations, featureLength, maps, options.numOfThreads);
+
+            parser.parseConllFile(devPath, modelPath + ".__tmp__",
+                    options.rootFirst, options.beamWidth, true, lowerCased, options.numOfThreads, false, "");
+            Evaluator.evaluate(devPath, modelPath + ".__tmp__", punctuations);
+            parser.shutDownLiveThreads();
+        }
+    }
+
+    private void trainEpoch(ArrayList<GoldConfiguration> trainData, int partialTreeIter, CompletionService<ArrayList<BeamElement>> pool, int i) throws Exception
+    {
+        long start = System.currentTimeMillis();
+
+        int dataCount = 0;
+
+        for (GoldConfiguration goldConfiguration : trainData) {
+            dataCount++;
+            if (dataCount % 1000 == 0)
+                System.out.print(dataCount + "...");
+            trainOnOneSample(goldConfiguration, partialTreeIter, i, dataCount, pool);
+
+            classifier.incrementIteration();
+        }
+        System.out.print("\n");
+        long end = System.currentTimeMillis();
+        long timeSec = (end - start) / 1000;
+        System.out.println("iteration "+i+" took " + timeSec + " seconds\n");
     }
 
     private void trainOnOneSample(GoldConfiguration goldConfiguration, int partialTreeIter, int i, int dataCount, CompletionService<ArrayList<BeamElement>> pool) throws Exception {

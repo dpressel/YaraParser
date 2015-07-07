@@ -5,7 +5,8 @@
     <groupId>com.yahoo.yara</groupId>
     <artifactId>yara</artifactId>
     <packaging>jar</packaging>
-    <version>0.2</version>
+    <!-- I have made very slight modifications, so incrementing micro for now -->
+    <version>0.2.1</version>
     <name>yara</name>
 
     <dependencies>
